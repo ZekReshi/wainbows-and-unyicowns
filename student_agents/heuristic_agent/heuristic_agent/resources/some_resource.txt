@@ -1,0 +1,1 @@
+add your resources inside this directory
