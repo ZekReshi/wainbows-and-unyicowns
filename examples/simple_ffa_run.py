@@ -1,6 +1,8 @@
 """An example to show how to set up an pommerman game programmatically"""
 import pommerman
 from pommerman import agents
+from group02 import group02_agent
+import time
 
 
 def main():
@@ -11,7 +13,7 @@ def main():
     # Create a set of agents
     agent_list = [
         agents.SimpleAgent(),
-        agents.SimpleAgent()
+        group02_agent.Group02Agent()
     ]
     # Make the "Free-For-All" environment using the agent list
     env = pommerman.make('PommeFFACompetition-v0', agent_list)
@@ -24,6 +26,8 @@ def main():
             env.render()
             actions = env.act(state)
             state, reward, done, info = env.step(actions)
+        env.render()
+        time.sleep(5)
         print('Episode {} finished'.format(i_episode))
     env.close()
 
