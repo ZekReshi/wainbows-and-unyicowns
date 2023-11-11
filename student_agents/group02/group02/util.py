@@ -1,8 +1,9 @@
 from queue import Queue
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Set
 import numpy as np
 
+from group02.priority_queue import PriorityQueue
 from pommerman import constants
 from pommerman.constants import Action, Item
 
@@ -17,6 +18,7 @@ SOLID_TILES = [Item.Rigid.value, Item.Wood.value]
 MOVE_ACTIONS = [Action.Up.value, Action.Down.value, Action.Left.value, Action.Right.value]
 
 MAX_BOMB_LIFE = 10
+MAX_FLAME_TICKS = 2
 
 
 def next_position(position: Tuple[int, int], action: int) -> Tuple[int, int]:
@@ -38,7 +40,7 @@ class Predicate(ABC):
     """ superclass for predicates """
 
     @abstractmethod
-    def test(self, board: np.ndarray, position: Tuple[int, int]) -> bool:
+    def test(self, board: np.ndarray, position: Tuple[int, int], cost: int) -> bool:
         raise NotImplementedError()
 
 
@@ -48,7 +50,7 @@ class FindItemPredicate(Predicate):
     def __init__(self, goal_items: List[int]) -> None:
         self.goal_items = goal_items
 
-    def test(self, board: np.ndarray, position: Tuple[int, int]) -> bool:
+    def test(self, board: np.ndarray, position: Tuple[int, int], cost: int) -> bool:
         r, c = position
         return board[r, c] in self.goal_items
 
@@ -60,10 +62,35 @@ class FindWoodPredicate(Predicate):
         self.blast_strength = blast_strength
         self.bombs = bomb_blast_strength
 
-    def test(self, board: np.ndarray, position: Tuple[int, int]) -> bool:
+    def test(self, board: np.ndarray, position: Tuple[int, int], cost: int) -> bool:
         # check if we can find a wooden tile to blast
         return Item.Wood.value in get_in_range(board, position, self.blast_strength) and \
                self.bombs[position[0], position[1]] == 0.0
+
+
+class WillDiePredicate(Predicate):
+    """ predicate is true if player will die """
+
+    def __init__(self, blast_map: List[List[Set]]) -> None:
+        self.blast_map = blast_map
+
+    def test(self, board: np.ndarray, position: Tuple[int, int], cost: int) -> bool:
+        # check if we will die in this position at this time
+        r, c = position
+        return cost in self.blast_map[r][c]
+
+
+class SurvivePredicate(Predicate):
+    """ predicate is true if player survives at cost """
+
+    def __init__(self, blast_map: List[List[Set]], cost: int) -> None:
+        self.blast_map = blast_map
+        self.cost = cost
+
+    def test(self, board: np.ndarray, position: Tuple[int, int], cost: int) -> bool:
+        # check if we will die in this position at this time
+        r, c = position
+        return len(self.blast_map[r][c]) == 0 or self.cost == cost
 
 
 class PositionNode:
@@ -73,6 +100,10 @@ class PositionNode:
         self.parent = parent
         self.position = position
         self.action = action
+        if parent is None:
+            self.cost = 0
+        else:
+            self.cost = parent.cost + 1
 
     def next(self, action: int) -> Tuple[int, int]:
         return next_position(self.position, action)
@@ -93,10 +124,10 @@ class PositionNode:
         return action, path_length
 
 
-def bfs(board: np.ndarray, start_position: Tuple[int, int], start_actions: List[int], predicate: Predicate) \
-        -> Optional[PositionNode]:
-    """ BFS - takes a predicate to find a certain goal node """
-    queue = Queue()
+def astar(board: np.ndarray, start_position: Tuple[int, int], start_actions: List[int], predicate: Predicate,
+          will_die_predicate: WillDiePredicate) -> Optional[PositionNode]:
+    """ ASTAR - takes a predicate to find a certain goal node """
+    queue = PriorityQueue()
     visited = set()
     start_node = PositionNode(None, start_position, None)
     visited.add(start_position)
@@ -105,16 +136,19 @@ def bfs(board: np.ndarray, start_position: Tuple[int, int], start_actions: List[
         next_pos = start_node.next(action)
         visited.add(next_pos)
         node = PositionNode(start_node, next_pos, action)
-        queue.put(node)
+        if not will_die_predicate.test(board, next_pos, node.cost):
+            queue.put(node.cost, node)
 
-    while not queue.empty():
+    while queue.has_elements():
         node = queue.get()
-        if predicate.test(board, node.position):
+        if predicate.test(board, node.position, node.cost):
             return node
         for action in [Action.Up.value, Action.Down.value, Action.Left.value, Action.Right.value]:
             next_pos = node.next(action)
             if valid_agent_position(board, next_pos) and next_pos not in visited:
-                queue.put(PositionNode(node, next_pos, action))
+                new_node = PositionNode(node, next_pos, action)
+                if not will_die_predicate.test(board, next_pos, node.cost):
+                    queue.put(new_node.cost, new_node)
                 visited.add(next_pos)
     return None  # no goal node found
 
@@ -139,6 +173,53 @@ def get_in_range(board: np.ndarray, position: Tuple[int, int], blast_strength: i
             else:
                 break
     return tiles_in_range
+
+
+def get_all_in_range(board: np.ndarray, position: Tuple[int, int], blast_strength: int) -> List[Tuple[int, int]]:
+    """ returns all tile positions that are in range of a bomb """
+    tiles_in_range = [position]
+    for row, col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dist in range(1, blast_strength):
+            r = position[0] + row * dist
+            c = position[1] + col * dist
+            if 0 <= r < len(board) and 0 <= c < len(board):
+                if board[r, c] in SOLID_TILES or board[r, c] == Item.Bomb.value:
+                    break
+                tiles_in_range.append((r, c))
+            else:
+                break
+    return tiles_in_range
+
+
+def create_blast_map(board: np.ndarray, bomb_blast_strength: np.ndarray, bomb_life: np.ndarray,
+                     bomb_moving_direction: np.ndarray, flame_life: np.ndarray) -> List[List[Set]]:
+    blast_map = [[set() for _ in range(board.shape[1])] for _ in range(board.shape[0])]
+    # flames that are currently on the board
+    locations = np.where(flame_life > 0)
+    for (r, c) in zip(locations[0], locations[1]):
+        life = int(flame_life[r, c])
+        blast_map[r][c].union(range(life - 1))
+
+    # flames that will be on the board
+    locations = np.where(bomb_blast_strength > 0)
+    for (r, c) in zip(locations[0], locations[1]):
+        position = (r, c)
+        life = int(bomb_life[r, c])
+        moving_direction = bomb_moving_direction[r, c]
+        print("A")
+        if moving_direction != Action.Stop.value:
+            for _ in range(bomb_life[r, c]):
+                new_position = next_position(position, moving_direction)
+                if valid_agent_position(board, new_position):
+                    position = new_position
+                else:
+                    break
+        tiles = get_all_in_range(board, (r, c), int(bomb_blast_strength[r, c]))
+        for (r2, c2) in tiles:
+            print("B")
+            for i in range(life, life + MAX_FLAME_TICKS):
+                blast_map[r2][c2].add(i)
+    return blast_map
 
 
 def manhattan_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
