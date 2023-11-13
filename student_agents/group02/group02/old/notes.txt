@@ -1,0 +1,7 @@
+strategies: farming, fighting
+tactics: destroy clouds, pick up items, lock in enemy, stay out of dead ends if enemy is too close,
+ surprise with kicked bomb, cut off enemy, destroy kick item, pick up item immediately
+
+lock in enemy (kick):
+* bomb shower
+* blast extension
