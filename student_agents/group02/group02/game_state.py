@@ -14,7 +14,9 @@ from pommerman import characters
 #  - bombs: we do not consider, which agent placed the bomb,
 #           after explosion this would increase the agent's ammo again
 #  - items: we do not know if an item is placed below a removable tile
-def game_state_from_obs(obs: Dict[str, Any]) \
+def game_state_from_obs(
+             obs: Dict[str, Any],
+            prev_state: Tuple[Any, List[agents.DummyAgent], List[characters.Bomb], Dict[Tuple[int, int], int], List[characters.Flame]] = None) \
         -> Tuple[np.ndarray,
                  List[agents.DummyAgent],
                  List[characters.Bomb],
@@ -27,8 +29,9 @@ def game_state_from_obs(obs: Dict[str, Any]) \
         convert_agents(obs["board"]),
         convert_bombs(np.array(obs["bomb_blast_strength"]), np.array(obs["bomb_life"])),
         convert_items(obs["board"]),
-        convert_flames(obs["board"])
+        convert_flames(obs["board"], flame_life=obs["flame_life"]),
     )
+    print(obs["bomb_life"].max())
     return game_state
 
 
@@ -82,10 +85,10 @@ def convert_items(board: np.ndarray) -> Dict[Tuple[int, int], int]:
     return ret
 
 
-def convert_flames(board: np.ndarray) -> List[characters.Flame]:
+def convert_flames(board: np.ndarray, flame_life: np.ndarray) -> List[characters.Flame]:
     """ creates a list of flame objects - initialized with flame_life=2 """
     ret = []
     locations = np.where(board == constants.Item.Flames.value)
     for r, c in zip(locations[0], locations[1]):
-        ret.append(characters.Flame((r, c)))
+        ret.append(characters.Flame((r, c),int(flame_life[(r, c)])))
     return ret
