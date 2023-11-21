@@ -19,7 +19,7 @@ def main():
     env = pommerman.make('PommeFFACompetition-v0', agent_list)
 
     # Run the episodes just like OpenAI Gym
-    for i_episode in range(3):
+    for i_episode in range(10):
         state = env.reset()
         done = False
         while not done:

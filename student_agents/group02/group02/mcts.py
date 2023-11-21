@@ -11,6 +11,7 @@ from gym import spaces
 import numpy as np
 from typing import Tuple, List, Dict, Optional
 
+from group02.game_state import Agent
 from pommerman import characters, agents
 
 
@@ -24,7 +25,8 @@ class MCTS:
                  agent_id: int,
                  root_state: Tuple[
                             np.ndarray,
-                            List[agents.DummyAgent],
+                            Agent,
+                            Agent,
                             List[characters.Bomb],
                             Dict[Tuple[int, int], int],
                             List[characters.Flame]
@@ -84,7 +86,7 @@ class MCTS:
         while not node.is_terminal() and depth < self.rollout_depth:
             node = node.find_random_child()  # default policy is random policy
             depth += 1
-        return node.reward(self.root_state)
+        return node.reward()
 
     def _backpropagate(self, path: List['MCTSNode'], reward: float) -> None:
         # Send the reward back up to the ancestors of the leaf
@@ -180,6 +182,6 @@ class MCTSNode(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def reward(self, root_state) -> float:
+    def reward(self) -> float:
         # either reward or in our case the return value of the value function
         raise NotImplementedError()

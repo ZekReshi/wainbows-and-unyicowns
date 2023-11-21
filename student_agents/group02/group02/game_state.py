@@ -1,9 +1,55 @@
 import numpy as np
 from typing import Dict, Any, Tuple, List
 
-from pommerman import agents
-from pommerman import constants
+from pommerman import constants, utility
 from pommerman import characters
+from pommerman.characters import Bomb
+from pommerman.constants import Item
+
+
+class Agent:
+    def __init__(self, aid: int, board_id: int, position: Tuple[int, int], can_kick: bool, max_ammo: int, ammo: int, bomb_range: int,
+                 alive: bool):
+        self.aid = aid
+        self.board_id = board_id
+        self.position = position
+        self.can_kick = can_kick
+        self.max_ammo = max_ammo
+        self.ammo = ammo
+        self.bomb_range = bomb_range
+        self.alive = alive
+
+    def __str__(self):
+        return f"ID: {self.aid}, Board ID: {self.board_id}, Position: {self.position}, Kick: {self.can_kick}, Max ammo: {self.max_ammo}, Ammo: {self.ammo}, Bomb Range: {self.bomb_range}, Alive: {self.alive}"
+
+    def get_next_position(self, direction) -> Tuple[int, int]:
+        action = constants.Action(direction)
+        return utility.get_next_position(self.position, action)
+
+    def move(self, direction):
+        self.position = self.get_next_position(direction)
+
+    def maybe_lay_bomb(self):
+        if self.ammo > 0:
+            self.ammo -= 1
+            return Bomb(self, self.position, constants.DEFAULT_BOMB_LIFE + 1,
+                        self.bomb_range)
+        return None
+
+    def die(self):
+        self.alive = False
+
+    def incr_ammo(self):
+        self.ammo = min(self.ammo + 1, 10)
+
+    def pick_up(self, item, max_blast_strength):
+        if item == constants.Item.ExtraBomb:
+            self.incr_ammo()
+        elif item == constants.Item.IncrRange:
+            self.bomb_range = min(self.bomb_range + 1,
+                                  max_blast_strength)
+        elif item == constants.Item.Kick:
+            self.can_kick = True
 
 
 # we have to create a game state from the observations
@@ -15,24 +61,25 @@ from pommerman import characters
 #           after explosion this would increase the agent's ammo again
 #  - items: we do not know if an item is placed below a removable tile
 def game_state_from_obs(
-             obs: Dict[str, Any],
-            prev_state: Tuple[Any, List[agents.DummyAgent], List[characters.Bomb], Dict[Tuple[int, int], int], List[characters.Flame]] = None) \
+        obs: Dict[str, Any],
+        me: Agent, opponent: Agent,
+        prev_board: np.ndarray = None) \
         -> Tuple[np.ndarray,
-                 List[agents.DummyAgent],
-                 List[characters.Bomb],
-                 Dict[Tuple[int, int], int],
-                 List[characters.Flame]]:
+        Agent,
+        Agent,
+        List[characters.Bomb],
+        Dict[Tuple[int, int], int],
+        List[characters.Flame]]:
     # TODO: think about removing some of the approximations and replacing them
     #   with exact values (e.g. tracking own and opponent's ammo and using exact flame life)
-    game_state = (
-        obs["board"],
-        convert_agents(obs["board"]),
-        convert_bombs(np.array(obs["bomb_blast_strength"]), np.array(obs["bomb_life"])),
-        convert_items(obs["board"]),
-        convert_flames(obs["board"], flame_life=obs["flame_life"]),
-    )
-    print(obs["bomb_life"].max())
-    return game_state
+    board = obs["board"]
+    #print(obs["bomb_life"].max())
+    return (board,
+            convert_me(board, obs["ammo"], me),
+            convert_opponent(obs["board"], prev_board, opponent),
+            convert_bombs(np.array(obs["bomb_blast_strength"]), np.array(obs["bomb_life"])),
+            convert_items(board),
+            convert_flames(board, obs["flame_life"]))
 
 
 def convert_bombs(strength_map: np.ndarray, life_map: np.ndarray) -> List[characters.Bomb]:
@@ -57,19 +104,32 @@ def make_bomb_items(ret: List[Dict[str, Any]]) -> List[characters.Bomb]:
     return bomb_obj_list
 
 
-def convert_agents(board: np.ndarray) -> List[agents.DummyAgent]:
-    """ creates two 'clones' of the actual agents """
-    ret = []
-    # agent board ids are 10 and 11 in two-player games
-    for aid in [10, 11]:
-        locations = np.where(board == aid)
-        agt = agents.DummyAgent()
-        agt.init_agent(aid, constants.GameType.FFA)
-        agt.set_start_position((locations[0][0], locations[1][0]))
-        agt.reset(is_alive=agt.is_alive)
-        agt.agent_id = aid - 10
-        ret.append(agt)
-    return ret
+def convert_me(board: np.ndarray, ammo: int, me: Agent) -> Agent:
+    locations = np.where(board == me.board_id)
+    if len(locations) == 0:
+        me.alive = False
+    me.position = (locations[0][0], locations[1][0])
+    me.ammo = ammo
+    return me
+
+
+def convert_opponent(board: np.ndarray, prev_board: np.ndarray, opponent: Agent) -> Agent:
+    locations = np.where(board == opponent.board_id)
+    if len(locations) == 0:
+        opponent.alive = False
+    position = (locations[0][0], locations[1][0])
+    if board[position] == Item.Bomb.value:
+        opponent.ammo -= 1
+    if prev_board is not None:
+        if prev_board[position] == Item.Kick.value:
+            opponent.can_kick = True
+        elif prev_board[position] == Item.ExtraBomb.value:
+            opponent.max_ammo += 1
+            opponent.ammo += 1
+        elif prev_board[position] == Item.IncrRange.value:
+            opponent.bomb_range += 1
+    opponent.position = position
+    return opponent
 
 
 def convert_items(board: np.ndarray) -> Dict[Tuple[int, int], int]:
@@ -90,5 +150,5 @@ def convert_flames(board: np.ndarray, flame_life: np.ndarray) -> List[characters
     ret = []
     locations = np.where(board == constants.Item.Flames.value)
     for r, c in zip(locations[0], locations[1]):
-        ret.append(characters.Flame((r, c),int(flame_life[(r, c)])))
+        ret.append(characters.Flame((r, c), int(flame_life[(r, c)])))
     return ret
