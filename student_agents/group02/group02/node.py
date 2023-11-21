@@ -32,6 +32,10 @@ class Node(MCTSNode):
 
         # here we need to think about pruning (for a particular node)
         # which action combinations do we really want to investigate in our search?
+        self.own_legal_actions = []
+        self.own_illegal_actions = []
+        self.enemy_legal_actions = []
+        self.enemy_illegal_actions = []
         self.action_combinations: List[Tuple[int, int]] = \
             [(a1, a2) for a1 in POSSIBLE_ACTIONS for a2 in POSSIBLE_ACTIONS if not self.prune((a1, a2))]
         # dictionary to store children according to actions performed
@@ -43,6 +47,11 @@ class Node(MCTSNode):
         # remember: two agents -> ids: 0 and 1
         own_agent = self.state[1][self.agent_id]
         opponent_agent = self.state[1][1 - self.agent_id]
+
+        # if an action has been decided to be illegal once, it will obviously be illegal again
+        if actions[self.agent_id] in self.own_illegal_actions or actions[opponent_agent.agent_id]:
+            return False
+
         own_position = own_agent.position
         opponent_position = opponent_agent.position
         man_dist = manhattan_dist(own_position, opponent_position)
@@ -52,10 +61,16 @@ class Node(MCTSNode):
 
         # a lot of moves (e.g. bumping into a wall or wooden tile) actually result in stop moves
         # we do not have to consider, since they lead to the same result as actually playing a stop move
-
-        if self._is_legal_action(own_position, actions[self.agent_id]) and \
-                self._is_legal_action(opponent_position, actions[opponent_agent.agent_id]):
-            return False  # not prune actions
+        if actions[self.agent_id] not in self.own_legal_actions:
+            if not self._is_legal_action(own_position, actions[self.agent_id]):
+                self.own_illegal_actions.append(actions[self.agent_id])
+                return False
+            self.own_legal_actions.append(actions[self.agent_id])
+        if actions[opponent_agent.agent_id] not in self.enemy_legal_actions:
+            if not self._is_legal_action(opponent_position, actions[opponent_agent.agent_id]):
+                self.enemy_illegal_actions.append(actions[opponent_agent.agent_id])
+                return False
+            self.enemy_legal_actions.append(actions[opponent_agent.agent_id])
         return True
 
     def _is_legal_action(self, position: Tuple[int, int], action: int) -> bool:
@@ -208,17 +223,27 @@ def _value_func(state, root_state, agent_id) -> float:
     # since search depth is limited, we need to reward well placed bombs instead
     # of only rewarding collecting items
     for bomb in state[2]:
-        # we only reward bombs placed next to clouds - you can improve this
-        loc = bomb.position
-        if loc[0]-1 >= 0 and board[loc[0]-1][loc[1]] == Item.Wood.value:
-            score += 0.02
-        if loc[0]+1 < len(board) and board[loc[0]+1][loc[1]] == Item.Wood.value:
-            score += 0.02
-        if loc[1]-1 >= 0 and board[loc[0]][loc[1]-1] == Item.Wood.value:
-            score += 0.02
-        if loc[1]+1 < len(board) and board[loc[0]][loc[1]+1] == Item.Wood.value:
-            score += 0.02
+        tiles = _get_in_range(board, bomb.position, bomb.blast_strength)
+        for tile in tiles:
+            if tile == Item.Wood.value:
+                score += 0.05
     return score
+
+
+def _get_in_range(board: np.ndarray, position: Tuple[int, int], blast_strength: int) -> List[int]:
+    """ returns all tiles that are in range of a bomb """
+    tiles_in_range = []
+    for row, col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dist in range(1, blast_strength):
+            r = position[0] + row * dist
+            c = position[1] + col * dist
+            if 0 <= r < len(board) and 0 <= c < len(board):
+                tiles_in_range.append(board[r, c])
+                if board[r, c] not in ACCESSIBLE_TILES or board[r, c] == Item.Bomb.value:
+                    break
+            else:
+                break
+    return tiles_in_range
 
 
 def _copy_agents(agents_to_copy: List[agents.DummyAgent]) -> List[agents.DummyAgent]:
