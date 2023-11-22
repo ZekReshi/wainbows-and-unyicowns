@@ -24,7 +24,7 @@ class Node(MCTSNode):
                  flames: List[characters.Flame]) -> None:
         self.total_reward = 0.0
         self.visit_count = 0
-        # state is a list of: 0. Board, 1. Agents, 2. Bombs, 3. Items, 4. Flames
+
         self.board = board
         self.own_agent = own_agent
         self.opponent_agent = opponent_agent
@@ -34,12 +34,25 @@ class Node(MCTSNode):
 
         # here we need to think about pruning (for a particular node)
         # which action combinations do we really want to investigate in our search?
-        self.own_legal_actions = []
-        self.own_illegal_actions = []
-        self.enemy_legal_actions = []
+
+        self.own_legal_actions = [Action.Stop.value]
+        self.own_illegal_actions = [] if self.own_agent.ammo > 0 else [Action.Bomb.value]
+        self.enemy_legal_actions = [Action.Stop.value]
         self.enemy_illegal_actions = []
-        self.action_combinations: List[Tuple[int, int]] = \
-            [(a1, a2) for a1 in POSSIBLE_ACTIONS for a2 in POSSIBLE_ACTIONS if not self.prune((a1, a2))]
+
+        own_position = self.own_agent.position
+        opponent_position = self.opponent_agent.position
+        man_dist = manhattan_dist(own_position, opponent_position)
+        if man_dist > 6:
+            self.enemy_illegal_actions = [Action.Left.value, Action.Right.value, Action.Up.value, Action.Down.value, Action.Bomb.value]
+
+        self.action_combinations = []
+        for a1 in POSSIBLE_ACTIONS:
+            for a2 in POSSIBLE_ACTIONS:
+                if not self.prune((a1, a2)):
+                    self.action_combinations.append((a1, a2))
+                    if a1 != Action.Stop.value:
+                        self.action_combinations.append((a1, a2))
         # dictionary to store children according to actions performed
         self.children: Dict[Tuple[int, int], 'Node'] = dict()
 
@@ -51,11 +64,6 @@ class Node(MCTSNode):
             return False
         own_position = self.own_agent.position
         opponent_position = self.opponent_agent.position
-
-        man_dist = manhattan_dist(own_position, opponent_position)
-        if man_dist > 6 and actions[self.opponent_agent.aid] != Action.Stop.value:
-            # we do not model the opponent, if it is more than 6 steps away
-            return True
 
         # a lot of moves (e.g. bumping into a wall or wooden tile) actually result in stop moves
         # we do not have to consider, since they lead to the same result as actually playing a stop move
@@ -75,8 +83,6 @@ class Node(MCTSNode):
         """ prune moves that lead to stop move"""
         if action == Action.Stop.value:
             return True
-        if action == Action.Bomb.value and self.own_agent.ammo == 0:
-            return False
         bombs = [bomb.position for bomb in self.bombs]
         row = position[0]
         col = position[1]
@@ -162,18 +168,18 @@ class Node(MCTSNode):
     def incr_visit_count(self) -> None:
         self.visit_count += 1
 
-    def reward(self) -> float:
+    def reward(self, root_node) -> float:
         # we do not want to role out games until the end,
         # since pommerman games can last for 800 steps, therefore we need to define a value function,
         # which assigns a numeric value to state (how "desirable" is the state?)
-        return _value_func(self.board, self.own_agent, self.opponent_agent, self.bombs)
+        return _value_func(root_node, self.board, self.own_agent, self.opponent_agent)
 
 
 def manhattan_dist(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
     return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
 
-def _value_func(board, own_agent: Agent, opponent_agent: Agent, bombs: List[characters.Bomb]) -> float:
+def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> float:
     # TODO: here you need to assign a value to a game state, for example the evaluation can
     #   be based on the number of blasted clouds, the number of collected items, the distance to the opponent, ...
     # state is a list of: 0. Board, 1. Agents, 2. Bombs, 3. Items, 4. Flames
@@ -209,35 +215,45 @@ def _value_func(board, own_agent: Agent, opponent_agent: Agent, bombs: List[char
     score += 0.005*(10-man_dist)  # the closer to the opponent the better
 
     # we want to collect items (forward model was modified to make this easier)
-    score += own_agent.bomb_range * 0.05
-    score += own_agent.max_ammo * 0.05
-    score += own_agent.can_kick * 0.1
+    score += (own_agent.bomb_range - root_node.own_agent.bomb_range) * 0.2
+    #if (own_agent.bomb_range - root_node.own_agent.bomb_range) > 0:
+        #print("Could increase bomb range")
+    score += (own_agent.ammo - root_node.own_agent.ammo) * 0.2
+    #if (own_agent.ammo - root_node.own_agent.ammo) > 0:
+        #print("Could increase max ammo")
+    score += (own_agent.can_kick - root_node.own_agent.can_kick) * 0.2
+    #if (own_agent.can_kick != root_node.own_agent.can_kick) > 0:
+        #print("Could get kick")
 
     # since search depth is limited, we need to reward well placed bombs instead
     # of only rewarding collecting items
-    print([bomb.position for bomb in bombs])
-    for bomb in bombs:
-        tiles = _get_in_range(board, bomb.position, bomb.blast_strength)
-        for tile in tiles:
-            if tile == Item.Wood.value:
-                score += 0.05
+    woods = set()
+    for bomb in own_agent.bombs:
+        new_woods = _get_woods_in_range(board, bomb[0], bomb[1])
+        for wood in new_woods:
+            woods.add(wood)
+    score += 0.05 * (2 ** len(woods))
+    #if len(woods) > 0:
+        #print("Could hit", len(woods), "woods")
     return score
 
 
-def _get_in_range(board: np.ndarray, position: Tuple[int, int], blast_strength: int) -> List[int]:
+def _get_woods_in_range(board: np.ndarray, position: Tuple[int, int], blast_strength: int) -> List[Tuple[int, int]]:
     """ returns all tiles that are in range of a bomb """
-    tiles_in_range = []
+    woods_in_range = []
     for row, col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
         for dist in range(1, blast_strength):
             r = position[0] + row * dist
             c = position[1] + col * dist
             if 0 <= r < len(board) and 0 <= c < len(board):
-                tiles_in_range.append(board[r, c])
+                if board[r, c] == Item.Wood.value:
+                    woods_in_range.append((r, c))
+                    break
                 if board[r, c] not in ACCESSIBLE_TILES or board[r, c] == Item.Bomb.value:
                     break
             else:
                 break
-    return tiles_in_range
+    return woods_in_range
 
 
 def _copy_agents(agents_to_copy: List[Agent]) -> List[Agent]:
@@ -249,8 +265,8 @@ def _copy_agents(agents_to_copy: List[Agent]) -> List[Agent]:
             agent.board_id,
             agent.position,
             agent.can_kick,
-            agent.max_ammo,
             agent.ammo,
+            copy.deepcopy(agent.bombs),
             agent.bomb_range,
             agent.alive
         )

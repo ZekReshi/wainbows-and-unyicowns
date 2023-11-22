@@ -23,18 +23,11 @@ class MCTS:
     def __init__(self,
                  action_space: spaces.Discrete,
                  agent_id: int,
-                 root_state: Tuple[
-                            np.ndarray,
-                            Agent,
-                            Agent,
-                            List[characters.Bomb],
-                            Dict[Tuple[int, int], int],
-                            List[characters.Flame]
-                        ],
+                 root_node: 'MCTSNode',
                  rollout_depth: int = 4,
                  exploration_weight: float = 1) -> None:
         self.action_space = action_space
-        self.root_state = root_state
+        self.root_node = root_node
         self.agent_id = agent_id
         self.rollout_depth = rollout_depth
         self.exploration_weight = exploration_weight  # used in uct formula
@@ -86,7 +79,7 @@ class MCTS:
         while not node.is_terminal() and depth < self.rollout_depth:
             node = node.find_random_child()  # default policy is random policy
             depth += 1
-        return node.reward()
+        return node.reward(self.root_node)
 
     def _backpropagate(self, path: List['MCTSNode'], reward: float) -> None:
         # Send the reward back up to the ancestors of the leaf
@@ -182,6 +175,6 @@ class MCTSNode(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def reward(self) -> float:
+    def reward(self, root_node) -> float:
         # either reward or in our case the return value of the value function
         raise NotImplementedError()

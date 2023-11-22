@@ -4,6 +4,7 @@ from group02.game_state import game_state_from_obs, Agent
 from group02.mcts import MCTS
 from group02.node import Node
 from pommerman import agents
+from pommerman.constants import Action
 
 
 class Group02Agent(agents.BaseAgent):
@@ -19,8 +20,8 @@ class Group02Agent(agents.BaseAgent):
 
     def __init__(self, *args, **kwargs):
         super(Group02Agent, self).__init__(*args, **kwargs)
-        self.me = Agent(0, 0, (0, 0), False, 1, 1, 1, True)
-        self.opponent = Agent(0, 0, (0, 0), False, 1, 1, 1, True)
+        self.me = Agent(0, 0, (0, 0), False, 1, [], 2, True)
+        self.opponent = Agent(0, 0, (0, 0), False, 1, [], 2, True)
         self.prev_board = None
 
     def act(self, obs, action_space):
@@ -35,11 +36,14 @@ class Group02Agent(agents.BaseAgent):
         root = Node(board, own_agent, opponent_agent, bombs, items, flames)
         # TODO: if you can improve the approximation of the forward model (in 'game_state.py')
         #   then you can think of reusing the search tree instead of creating a new one all the time
-        tree = MCTS(action_space, self.agent_id, (board, own_agent, opponent_agent, bombs, items, flames), rollout_depth=5)  # create tree
+        tree = MCTS(action_space, self.agent_id, root, rollout_depth=6)  # create tree
         start_time = time.time()
         # now rollout tree for 450 ms
+        #rollouts = 0
         while time.time() - start_time < 0.45:
             tree.do_rollout(root)
+            #rollouts += 1
+        #print(rollouts, "rollouts")
         move = tree.choose(root)
         self.prev_board = board
         return move
