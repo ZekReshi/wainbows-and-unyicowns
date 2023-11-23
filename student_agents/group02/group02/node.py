@@ -44,7 +44,8 @@ class Node(MCTSNode):
         opponent_position = self.opponent_agent.position
         man_dist = manhattan_dist(own_position, opponent_position)
         if man_dist > 6:
-            self.enemy_illegal_actions = [Action.Left.value, Action.Right.value, Action.Up.value, Action.Down.value, Action.Bomb.value]
+            self.enemy_illegal_actions = [Action.Left.value, Action.Right.value, Action.Up.value, Action.Down.value,
+                                          Action.Bomb.value]
 
         self.action_combinations = []
         for a1 in POSSIBLE_ACTIONS:
@@ -179,6 +180,26 @@ def manhattan_dist(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
     return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
 
+def get_wood_on_board_count(board: np.ndarray):
+    return np.sum((board == Item.Wood.value))
+
+
+# if a bomb can kill an agent, give it a high score depending on distance of bomb to agent, otherwise 0
+def bomb_kill_score(board: np.ndarray, agent_position, bomb_position: Tuple[int, int], blast_strength: int) -> float:
+    for row, col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dist in range(1, blast_strength):
+            r = bomb_position[0] + row * dist
+            c = bomb_position[1] + col * dist
+            if 0 <= r < len(board) and 0 <= c < len(board):
+                if r == agent_position[0] and c == agent_position[1]:
+                    return 0.5 * ((blast_strength - dist) / blast_strength)
+                if board[r, c] not in ACCESSIBLE_TILES or board[r, c] == Item.Bomb.value:
+                    break
+            else:
+                break
+    return 0
+
+
 def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> float:
     # TODO: here you need to assign a value to a game state, for example the evaluation can
     #   be based on the number of blasted clouds, the number of collected items, the distance to the opponent, ...
@@ -199,31 +220,37 @@ def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> fl
     # if agent cannot move in any direction than it's locked up either by a bomb,
     # or the opponent agent -> very bad position
     down_cond = own_position[0] + 1 >= len(board) or \
-        board[own_position[0] + 1][own_position[1]] not in ACCESSIBLE_TILES
+                board[own_position[0] + 1][own_position[1]] not in ACCESSIBLE_TILES
     up_cond = own_position[0] - 1 < 0 or \
-        board[own_position[0] - 1][own_position[1]] not in ACCESSIBLE_TILES
+              board[own_position[0] - 1][own_position[1]] not in ACCESSIBLE_TILES
     right_cond = own_position[1] + 1 >= len(board) or \
-        board[own_position[0]][own_position[1] + 1] not in ACCESSIBLE_TILES
+                 board[own_position[0]][own_position[1] + 1] not in ACCESSIBLE_TILES
     left_cond = own_position[1] - 1 < 0 or \
-        board[own_position[0]][own_position[1] - 1] not in ACCESSIBLE_TILES
+                board[own_position[0]][own_position[1] - 1] not in ACCESSIBLE_TILES
 
     if down_cond and up_cond and right_cond and left_cond:
         score += -0.5
 
+    ## if there are not many woods left to destroy or we have all upgrades focus on getting to the enemy and place bomb
+    attack_mode = get_wood_on_board_count(board) <= 10 or \
+                  (own_agent.bomb_range - root_node.own_agent.bomb_range == 0 and
+                   own_agent.ammo - root_node.own_agent.ammo == 0 and
+                   own_agent.can_kick - root_node.own_agent.can_kick == 0)
+
     # we want to push our agent towards the opponent
     man_dist = manhattan_dist(own_position, opponent_position)
-    score += 0.005*(10-man_dist)  # the closer to the opponent the better
+    score += 0.005 * (10 - man_dist) * (2 if attack_mode else 1)  # the closer to the opponent the better
 
     # we want to collect items (forward model was modified to make this easier)
-    score += (own_agent.bomb_range - root_node.own_agent.bomb_range) * 0.2
-    #if (own_agent.bomb_range - root_node.own_agent.bomb_range) > 0:
-        #print("Could increase bomb range")
-    score += (own_agent.ammo - root_node.own_agent.ammo) * 0.2
-    #if (own_agent.ammo - root_node.own_agent.ammo) > 0:
-        #print("Could increase max ammo")
-    score += (own_agent.can_kick - root_node.own_agent.can_kick) * 0.2
-    #if (own_agent.can_kick != root_node.own_agent.can_kick) > 0:
-        #print("Could get kick")
+    score += (own_agent.bomb_range - root_node.own_agent.bomb_range) * 0.2 * (0.05 if attack_mode else 1)
+    # if (own_agent.bomb_range - root_node.own_agent.bomb_range) > 0:
+    # print("Could increase bomb range")
+    score += (own_agent.ammo - root_node.own_agent.ammo) * 0.2 * (0.05 if attack_mode else 1)
+    # if (own_agent.ammo - root_node.own_agent.ammo) > 0:
+    # print("Could increase max ammo")
+    score += (own_agent.can_kick - root_node.own_agent.can_kick) * 0.2 * (0.05 if attack_mode else 1)
+    # if (own_agent.can_kick != root_node.own_agent.can_kick) > 0:
+    # print("Could get kick")
 
     # since search depth is limited, we need to reward well placed bombs instead
     # of only rewarding collecting items
@@ -232,9 +259,13 @@ def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> fl
         new_woods = _get_woods_in_range(board, bomb[0], bomb[1])
         for wood in new_woods:
             woods.add(wood)
-    score += 0.05 * (2 ** len(woods))
-    #if len(woods) > 0:
-        #print("Could hit", len(woods), "woods")
+        if attack_mode:
+            score += bomb_kill_score(board, opponent_position, bomb[0], bomb[1])
+    score += 0.05 * (2 ** len(woods)) * (0.2 if attack_mode else 1)
+    # if len(woods) > 0:
+    # print("Could hit", len(woods), "woods")
+
+    # if in attack_mode,see if we can place game-winning bomb
     return score
 
 
