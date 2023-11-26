@@ -4,4 +4,6 @@ Improvements we made are:
 * Pruning also was improved by not checking legality of actions multiple times.
 * Value function: The type of collected item is considered to not collect a Kick when the agent already has this ability.
 * Value function: Only own bombs are looked at when calculating how many clouds can be destroyed, additionally the bomb range is taken into account.
+* Value function: when there are little clouds remaining, or the agent has collected all possible upgrades, it goes into "attack mode".
+* Value function: In attack mode, the agent prioritises going towards the other agent, and placing bombs if the other agent is in range.
 * Forward model: Flame ticks are modeled correctly, ammo is tracked.
