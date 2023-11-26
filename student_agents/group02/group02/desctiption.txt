@@ -1,0 +1,7 @@
+We took the HeuristicAgent as a basis to develop our own, additionally the forward model was copied to allow changes.
+Improvements we made are:
+* The node construction was sped up by calling prune less often. This was achieved by explicitly excluding illegal moves from being considered.
+* Pruning also was improved by not checking legality of actions multiple times.
+* Value function: The type of collected item is considered to not collect a Kick when the agent already has this ability.
+* Value function: Only own bombs are looked at when calculating how many clouds can be destroyed, additionally the bomb range is taken into account.
+* Forward model: Flame ticks are modeled correctly, ammo is tracked.
