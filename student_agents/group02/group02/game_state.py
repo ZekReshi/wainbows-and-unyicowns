@@ -9,7 +9,7 @@ from pommerman.constants import Item
 
 class Agent:
     def __init__(self, aid: int, board_id: int, position: Tuple[int, int], can_kick: bool, ammo: int,
-                 bombs: List[Tuple[Tuple[int, int], int]], bomb_range: int, alive: bool):
+                 bombs: List[Bomb], bomb_range: int, alive: bool):
         self.aid = aid
         self.board_id = board_id
         self.position = position
@@ -20,7 +20,7 @@ class Agent:
         self.alive = alive
 
     def __str__(self):
-        return f"ID: {self.aid}, Board ID: {self.board_id}, Position: {self.position}, Kick: {self.can_kick}, Ammo: {self.ammo}, Bombs: {self.bombs}, Bomb Range: {self.bomb_range}, Alive: {self.alive}"
+        return f"ID: {self.aid}, Board ID: {self.board_id}, Position: {self.position}, Kick: {self.can_kick}, Ammo: {self.ammo}, Bombs: {[(bomb.position, bomb.life) for bomb in self.bombs]}, Bomb Range: {self.bomb_range}, Alive: {self.alive}"
 
     def get_next_position(self, direction) -> Tuple[int, int]:
         action = constants.Action(direction)
@@ -32,10 +32,13 @@ class Agent:
     def maybe_lay_bomb(self):
         if self.ammo > 0:
             self.ammo -= 1
-            self.bombs.append((self.position, self.bomb_range))
-            return Bomb(self, self.position, constants.DEFAULT_BOMB_LIFE + 1,
-                        self.bomb_range)
+            bomb = Bomb(self, self.position, constants.DEFAULT_BOMB_LIFE + 1, self.bomb_range)
+            self.bombs.append(bomb)
+            return bomb
         return None
+
+    def laid_bomb(self):
+        self.bombs.append(Bomb(self, self.position, constants.DEFAULT_BOMB_LIFE, self.bomb_range))
 
     def die(self):
         self.alive = False
@@ -76,8 +79,8 @@ def game_state_from_obs(
     board = obs["board"]
     #print(obs["bomb_life"].max())
     return (board,
-            convert_me(board, obs["blast_strength"], obs["ammo"], me),
-            convert_opponent(obs["board"], prev_board, opponent),
+            convert_me(board, obs["blast_strength"], obs["ammo"], obs["can_kick"], obs["bomb_life"], me),
+            convert_opponent(obs["board"], obs["bomb_life"], prev_board, opponent),
             convert_bombs(np.array(obs["bomb_blast_strength"]), np.array(obs["bomb_life"])),
             convert_items(board),
             convert_flames(board, obs["flame_life"]))
@@ -105,31 +108,43 @@ def make_bomb_items(ret: List[Dict[str, Any]]) -> List[characters.Bomb]:
     return bomb_obj_list
 
 
-def convert_me(board: np.ndarray, blast_strength: int, ammo: int, me: Agent) -> Agent:
+def convert_me(board: np.ndarray, blast_strength: int, ammo: int, can_kick: bool, bomb_life: np.ndarray, me: Agent) -> Agent:
     locations = np.where(board == me.board_id)
     if len(locations) == 0:
         me.alive = False
     me.position = (locations[0][0], locations[1][0])
     me.bomb_range = blast_strength
+    me.can_kick = can_kick
     me.ammo = ammo
+    for bomb in me.bombs:
+        bomb.life -= 1
+        if bomb.life == 0:
+            me.bombs.remove(bomb)
+    if bomb_life[me.position] == constants.DEFAULT_BOMB_LIFE:
+        me.laid_bomb()
     return me
 
 
-def convert_opponent(board: np.ndarray, prev_board: np.ndarray, opponent: Agent) -> Agent:
+def convert_opponent(board: np.ndarray, bomb_life: np.ndarray, prev_board: np.ndarray, opponent: Agent) -> Agent:
     locations = np.where(board == opponent.board_id)
     if len(locations) == 0:
         opponent.alive = False
-    position = (locations[0][0], locations[1][0])
-    if board[position] == Item.Bomb.value:
+    opponent.position = (locations[0][0], locations[1][0])
+    for bomb in opponent.bombs:
+        bomb.life -= 1
+        if bomb.life == 0:
+            opponent.bombs.remove(bomb)
+            opponent.ammo += 1
+    if bomb_life[opponent.position] == constants.DEFAULT_BOMB_LIFE:
+        opponent.laid_bomb()
         opponent.ammo -= 1
     if prev_board is not None:
-        if prev_board[position] == Item.Kick.value:
+        if prev_board[opponent.position] == Item.Kick.value:
             opponent.can_kick = True
-        elif prev_board[position] == Item.ExtraBomb.value:
+        elif prev_board[opponent.position] == Item.ExtraBomb.value:
             opponent.ammo += 1
-        elif prev_board[position] == Item.IncrRange.value:
+        elif prev_board[opponent.position] == Item.IncrRange.value:
             opponent.bomb_range += 1
-    opponent.position = position
     return opponent
 
 

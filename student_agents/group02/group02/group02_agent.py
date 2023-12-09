@@ -4,7 +4,6 @@ from group02.game_state import game_state_from_obs, Agent
 from group02.mcts import MCTS
 from group02.node import Node
 from pommerman import agents
-from pommerman.constants import Action
 
 
 class Group02Agent(agents.BaseAgent):
@@ -36,7 +35,7 @@ class Group02Agent(agents.BaseAgent):
         root = Node(board, own_agent, opponent_agent, bombs, items, flames)
         # TODO: if you can improve the approximation of the forward model (in 'game_state.py')
         #   then you can think of reusing the search tree instead of creating a new one all the time
-        tree = MCTS(action_space, self.agent_id, root, rollout_depth=6)  # create tree
+        tree = MCTS(action_space, self.agent_id, root, rollout_depth=7)  # create tree
         start_time = time.time()
         # now rollout tree for 450 ms
         #rollouts = 0

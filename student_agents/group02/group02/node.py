@@ -3,8 +3,9 @@ import random
 import numpy as np
 from typing import Dict, Tuple, List, Optional
 
+from pommerman.characters import Bomb, Bomber, Flame
 from pommerman.constants import Action
-from pommerman import characters
+from pommerman import characters, constants
 from pommerman.constants import Item, POSSIBLE_ACTIONS
 from .game_state import Agent
 
@@ -34,59 +35,31 @@ class Node(MCTSNode):
 
         # here we need to think about pruning (for a particular node)
         # which action combinations do we really want to investigate in our search?
-
-        self.own_legal_actions = [Action.Stop.value]
-        self.own_illegal_actions = [] if self.own_agent.ammo > 0 else [Action.Bomb.value]
-        self.enemy_legal_actions = [Action.Stop.value]
-        self.enemy_illegal_actions = []
-
         own_position = self.own_agent.position
         opponent_position = self.opponent_agent.position
+
+        legal_actions = [[a for a in POSSIBLE_ACTIONS if self._is_legal_action(self.own_agent, a)]]
         man_dist = manhattan_dist(own_position, opponent_position)
-        if man_dist > 6:
-            self.enemy_illegal_actions = [Action.Left.value, Action.Right.value, Action.Up.value, Action.Down.value,
-                                          Action.Bomb.value]
+        legal_actions.insert(self.opponent_agent.aid, [Action.Stop.value] if man_dist > 6 else [a for a in POSSIBLE_ACTIONS if self._is_legal_action(self.opponent_agent, a)])
 
         self.action_combinations = []
-        for a1 in POSSIBLE_ACTIONS:
-            for a2 in POSSIBLE_ACTIONS:
-                if not self.prune((a1, a2)):
-                    self.action_combinations.append((a1, a2))
-                    if a1 != Action.Stop.value:
-                        self.action_combinations.append((a1, a2))
+        for a1 in legal_actions[0]:
+            for a2 in legal_actions[1]:
+                self.action_combinations.append((a1, a2))
+                #if a1 != Action.Stop.value:
+                    #self.action_combinations.append((a1, a2))
+        #print(self.action_combinations)
         # dictionary to store children according to actions performed
         self.children: Dict[Tuple[int, int], 'Node'] = dict()
 
-    def prune(self, actions: Tuple[int, int]) -> bool:
-        # TODO: here you can think about more complex stategies to prune moves,
-        #   which allows you to create deeper search trees (very important!)
-        # remember: two agents -> ids: 0 and 1
-        if actions[self.own_agent.aid] in self.own_illegal_actions or actions[self.opponent_agent.aid]:
-            return False
-        own_position = self.own_agent.position
-        opponent_position = self.opponent_agent.position
-
-        # a lot of moves (e.g. bumping into a wall or wooden tile) actually result in stop moves
-        # we do not have to consider, since they lead to the same result as actually playing a stop move
-        if actions[self.own_agent.aid] not in self.own_legal_actions:
-            if not self._is_legal_action(own_position, actions[self.own_agent.aid]):
-                self.own_illegal_actions.append(actions[self.own_agent.aid])
-                return False
-            self.own_legal_actions.append(actions[self.own_agent.aid])
-        if actions[self.opponent_agent.aid] not in self.enemy_legal_actions:
-            if not self._is_legal_action(opponent_position, actions[self.opponent_agent.aid]):
-                self.enemy_illegal_actions.append(actions[self.opponent_agent.aid])
-                return False
-            self.enemy_legal_actions.append(actions[self.opponent_agent.aid])
-        return True
-
-    def _is_legal_action(self, position: Tuple[int, int], action: int) -> bool:
+    def _is_legal_action(self, agent: Agent, action: int) -> bool:
         """ prune moves that lead to stop move"""
         if action == Action.Stop.value:
             return True
-        bombs = [bomb.position for bomb in self.bombs]
-        row = position[0]
-        col = position[1]
+
+        bombs = [bomb.position for bomb in agent.bombs]
+        row = agent.position[0]
+        col = agent.position[1]
         # if it a bomb move, check if there is already a bomb planted on this field
         if action == Action.Bomb.value and (row, col) in bombs:
             return False
@@ -113,10 +86,10 @@ class Node(MCTSNode):
     def _forward(self, actions: Tuple[int, int]) -> 'Node':
         """ applies the actions to obtain the next game state """
         # since the forward model directly modifies the parameters, we have to provide copies
-        board = copy.deepcopy(self.board)
+        board = np.copy(self.board)
         agents = _copy_agents([self.own_agent, self.opponent_agent])
         bombs = _copy_bombs(self.bombs)
-        items = copy.deepcopy(self.items)
+        items = self.items.copy()
         flames = _copy_flames(self.flames)
         board, agents, curr_bombs, curr_items, curr_flames = ForwardModel.step(
             actions,
@@ -219,53 +192,61 @@ def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> fl
 
     # if agent cannot move in any direction than it's locked up either by a bomb,
     # or the opponent agent -> very bad position
-    down_cond = own_position[0] + 1 >= len(board) or \
-                board[own_position[0] + 1][own_position[1]] not in ACCESSIBLE_TILES
-    up_cond = own_position[0] - 1 < 0 or \
-              board[own_position[0] - 1][own_position[1]] not in ACCESSIBLE_TILES
-    right_cond = own_position[1] + 1 >= len(board) or \
-                 board[own_position[0]][own_position[1] + 1] not in ACCESSIBLE_TILES
-    left_cond = own_position[1] - 1 < 0 or \
-                board[own_position[0]][own_position[1] - 1] not in ACCESSIBLE_TILES
+    cant_move = (own_position[0] + 1 >= len(board) or
+                 board[own_position[0] + 1][own_position[1]] not in ACCESSIBLE_TILES) and \
+                (own_position[0] - 1 < 0 or
+                 board[own_position[0] - 1][own_position[1]] not in ACCESSIBLE_TILES) and \
+                (own_position[1] + 1 >= len(board) or
+                 board[own_position[0]][own_position[1] + 1] not in ACCESSIBLE_TILES) and \
+                (own_position[1] - 1 < 0 or
+                 board[own_position[0]][own_position[1] - 1] not in ACCESSIBLE_TILES)
 
-    if down_cond and up_cond and right_cond and left_cond:
-        score += -0.5
+    if cant_move:
+        if not own_agent.can_kick:
+            if own_position[0] + 1 < len(board) and \
+                        board[own_position[0] + 1][own_position[1]] == Item.Bomb.value or \
+                    own_position[0] - 1 >= 0 and \
+                        board[own_position[0] - 1][own_position[1]] == Item.Bomb.value or \
+                    own_position[1] + 1 < len(board) and \
+                        board[own_position[0]][own_position[1] + 1] == Item.Bomb.value or \
+                    own_position[1] - 1 >= 0 and \
+                        board[own_position[0]][own_position[1] - 1] == Item.Bomb.value:
+                return -1
 
-    ## if there are not many woods left to destroy or we have all upgrades focus on getting to the enemy and place bomb
+        score -= 0.5
+
+    # if there are not many woods left to destroy or we have all upgrades focus on getting to the enemy and place bomb
+    need_bomb_range = own_agent.bomb_range < 8
+    need_ammo = own_agent.ammo < 4
+    need_kick = not own_agent.can_kick
     attack_mode = get_wood_on_board_count(board) <= 10 or \
-                  (own_agent.bomb_range - root_node.own_agent.bomb_range == 0 and
-                   own_agent.ammo - root_node.own_agent.ammo == 0 and
-                   own_agent.can_kick - root_node.own_agent.can_kick == 0)
+                  (not need_bomb_range and not need_ammo and not need_kick)
 
     # we want to push our agent towards the opponent
     man_dist = manhattan_dist(own_position, opponent_position)
     score += 0.005 * (10 - man_dist) * (2 if attack_mode else 1)  # the closer to the opponent the better
 
     # we want to collect items (forward model was modified to make this easier)
-    score += (own_agent.bomb_range - root_node.own_agent.bomb_range) * 0.2 * (0.05 if attack_mode else 1)
-    # if (own_agent.bomb_range - root_node.own_agent.bomb_range) > 0:
-    # print("Could increase bomb range")
-    score += (own_agent.ammo - root_node.own_agent.ammo) * 0.2 * (0.05 if attack_mode else 1)
-    # if (own_agent.ammo - root_node.own_agent.ammo) > 0:
-    # print("Could increase max ammo")
-    score += (own_agent.can_kick - root_node.own_agent.can_kick) * 0.2 * (0.05 if attack_mode else 1)
-    # if (own_agent.can_kick != root_node.own_agent.can_kick) > 0:
-    # print("Could get kick")
+    score += (own_agent.bomb_range - root_node.own_agent.bomb_range) * (0.2 if need_bomb_range else 0.05)
+    score += (own_agent.ammo - root_node.own_agent.ammo) * (0.2 if need_ammo else 0.05)
+    score += (own_agent.can_kick - root_node.own_agent.can_kick) * (0.2 if need_kick else 0)
 
     # since search depth is limited, we need to reward well placed bombs instead
     # of only rewarding collecting items
-    woods = set()
+    woods = {}
     for bomb in own_agent.bombs:
-        new_woods = _get_woods_in_range(board, bomb[0], bomb[1])
+        new_woods = _get_woods_in_range(board, bomb.position, bomb.life)
         for wood in new_woods:
-            woods.add(wood)
+            woods[wood] = min(woods[wood], bomb.life) if wood in woods else bomb.life
         if attack_mode:
-            score += bomb_kill_score(board, opponent_position, bomb[0], bomb[1])
-    score += 0.05 * (2 ** len(woods)) * (0.2 if attack_mode else 1)
-    # if len(woods) > 0:
-    # print("Could hit", len(woods), "woods")
+            score += bomb_kill_score(board, opponent_position, bomb.position, bomb.life)
+    wood_score = 1
+    for bomb_life in woods.values():
+        # default bomb life = 9, rollout depth = 7, 9 - 2 = 2, theoretical minimum, worst factor should be 1.5
+        wood_score *= 2 * (1 - (bomb_life - 2) / (constants.DEFAULT_BOMB_LIFE - 2) * 0.75)
+    score += (2 ** len(woods)) * (0.01 if attack_mode else 0.05)
 
-    # if in attack_mode,see if we can place game-winning bomb
+    # if in attack_mode, see if we can place game-winning bomb
     return score
 
 
@@ -297,7 +278,7 @@ def _copy_agents(agents_to_copy: List[Agent]) -> List[Agent]:
             agent.position,
             agent.can_kick,
             agent.ammo,
-            copy.deepcopy(agent.bombs),
+            _copy_agent_bombs(agent.bombs),
             agent.bomb_range,
             agent.alive
         )
@@ -305,20 +286,16 @@ def _copy_agents(agents_to_copy: List[Agent]) -> List[Agent]:
     return agents_copy
 
 
-def _copy_bombs(bombs: List[characters.Bomb]) -> List[characters.Bomb]:
+def _copy_agent_bombs(bombs: List[Bomb]) -> List[Bomb]:
+    return [Bomb(bomb.bomber, bomb.position, bomb.life, bomb.blast_strength, bomb.moving_direction) for bomb in bombs]
+
+
+def _copy_bombs(bombs: List[Bomb]) -> List[Bomb]:
     """ copy bombs of the current node """
-    bombs_copy = []
-    for bomb in bombs:
-        bomber = characters.Bomber()
-        bombs_copy.append(
-            characters.Bomb(bomber, bomb.position, bomb.life, bomb.blast_strength,
-                            bomb.moving_direction)
-        )
-
-    return bombs_copy
+    return [Bomb(Bomber(), bomb.position, bomb.life, bomb.blast_strength, bomb.moving_direction) for bomb in bombs]
 
 
-def _copy_flames(flames: List[characters.Flame]) -> List[characters.Flame]:
+def _copy_flames(flames: List[Flame]) -> List[Flame]:
     """ copy flames of the current node """
     flames_copy = []
     for flame in flames:
