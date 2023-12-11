@@ -235,16 +235,22 @@ def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> fl
     # of only rewarding collecting items
     woods = {}
     for bomb in own_agent.bombs:
-        new_woods = _get_woods_in_range(board, bomb.position, bomb.life)
+        new_woods = _get_woods_in_range(board, bomb.position, bomb.blast_strength)
         for wood in new_woods:
             woods[wood] = min(woods[wood], bomb.life) if wood in woods else bomb.life
+            #print(f"bomb on {bomb.position} with strength {bomb.blast_strength} and life {bomb.life} is gud for wood {wood}")
+        #print()
         if attack_mode:
             score += bomb_kill_score(board, opponent_position, bomb.position, bomb.life)
-    wood_score = 1
+    wood_score = 1.4 ** len(woods)
     for bomb_life in woods.values():
-        # default bomb life = 9, rollout depth = 7, 9 - 2 = 2, theoretical minimum, worst factor should be 1.5
-        wood_score *= 2 * (1 - (bomb_life - 2) / (constants.DEFAULT_BOMB_LIFE - 2) * 0.75)
-    score += (2 ** len(woods)) * (0.01 if attack_mode else 0.05)
+        # default bomb life = 9, rollout depth = 7, 9 - 2 = 2
+        wood_score *= 1.1 ** (constants.DEFAULT_BOMB_LIFE - bomb_life + 2)
+    score += wood_score * (0.01 if attack_mode else 0.05) - 0.05
+    if wood_score * (0.01 if attack_mode else 0.05) - 0.05 > 4:
+        print(wood_score * (0.01 if attack_mode else 0.05) - 0.05)
+        for bomb in own_agent.bombs:
+            print(bomb.position)
 
     # if in attack_mode, see if we can place game-winning bomb
     return score
@@ -287,7 +293,7 @@ def _copy_agents(agents_to_copy: List[Agent]) -> List[Agent]:
 
 
 def _copy_agent_bombs(bombs: List[Bomb]) -> List[Bomb]:
-    return [Bomb(bomb.bomber, bomb.position, bomb.life, bomb.blast_strength, bomb.moving_direction) for bomb in bombs]
+    return [Bomb(bomb.bomber, bomb.position, bomb.life - 1, bomb.blast_strength, bomb.moving_direction) for bomb in bombs]
 
 
 def _copy_bombs(bombs: List[Bomb]) -> List[Bomb]:
