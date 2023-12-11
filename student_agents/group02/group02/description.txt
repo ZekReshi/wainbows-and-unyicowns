@@ -1,3 +1,4 @@
+Version 1:
 We took the HeuristicAgent as a basis to develop our own, additionally the forward model was copied to allow changes.
 Improvements we made are:
 * The node construction was sped up by calling prune less often. This was achieved by explicitly excluding illegal moves from being considered.
@@ -7,3 +8,13 @@ Improvements we made are:
 * Value function: when there are little clouds remaining, or the agent has collected all possible upgrades, it goes into "attack mode".
 * Value function: In attack mode, the agent prioritises going towards the other agent, and placing bombs if the other agent is in range.
 * Forward model: Flame ticks are modeled correctly, ammo is tracked.
+
+NEW CHANGES:
+Version 2:
+* Value function: Bomb life is considered so that bombs are placed rather sooner than later.
+* Value function: If the agent is locked in AND there is a bomb that cannot be kicked, it is considered certain death
+* Value function: Adjusted scores.
+* Node: Very inefficient code was cut to double the number of rollouts.
+* Observations: Correct enemy modeling.
+* Increased depth.
+Is is better? As it can still put out the same amount of rollouts although it has a larger search depth, we assume it will perform better as all other changes made it more complicated and take more information into account. When run on our laptops, it played noticeably better in most arenas.
