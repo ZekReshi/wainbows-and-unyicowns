@@ -19,30 +19,42 @@ class Group02Agent(agents.BaseAgent):
 
     def __init__(self, *args, **kwargs):
         super(Group02Agent, self).__init__(*args, **kwargs)
+        self._init()
+
+    def _init(self):
         self.me = Agent(0, 0, (0, 0), False, 1, [], 2, True)
         self.opponent = Agent(0, 0, (0, 0), False, 1, [], 2, True)
         self.prev_board = None
+        self.tree = MCTS(None, 0, None, rollout_depth=7)
+        self.action = None
 
     def act(self, obs, action_space):
+        if obs['step_count'] == 0:
+            self._init()
+
         # our agent id
         self.me.aid = self.agent_id
         self.opponent.aid = 1 - self.agent_id
         self.me.board_id = obs["alive"][self.me.aid]
         self.opponent.board_id = obs["alive"][self.opponent.aid]
         # it is not possible to use pommerman's forward model directly with observations,
-        # therefore we need to convert the observations to a game state+
+        # therefore we need to convert the observations to a game state
         board, own_agent, opponent_agent, bombs, items, flames = game_state_from_obs(obs, self.me, self.opponent, self.prev_board)
-        root = Node(board, own_agent, opponent_agent, bombs, items, flames)
+        self.tree.action_space = action_space
+        self.tree.agent_id = self.agent_id
+        actions = (self.opponent.action, self.me.action) if self.me.aid > self.opponent.aid else (self.me.action, self.opponent.action)
+        if not self.tree.step(actions):
+            #print("RESETTING TREE " + str(obs['step_count']))
+            self.tree.root_node = Node(board, own_agent, opponent_agent, bombs, items, flames, True)
         # TODO: if you can improve the approximation of the forward model (in 'game_state.py')
         #   then you can think of reusing the search tree instead of creating a new one all the time
-        tree = MCTS(action_space, self.agent_id, root, rollout_depth=7)  # create tree
         start_time = time.time()
         # now rollout tree for 450 ms
         #rollouts = 0
         while time.time() - start_time < 0.45:
-            tree.do_rollout(root)
+            self.tree.do_rollout()
             #rollouts += 1
         #print(rollouts, "rollouts")
-        move = tree.choose(root)
+        self.me.action = self.tree.choose()
         self.prev_board = board
-        return move
+        return self.me.action

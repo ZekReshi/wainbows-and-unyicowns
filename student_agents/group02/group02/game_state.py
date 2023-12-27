@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple, List
 from pommerman import constants, utility
 from pommerman import characters
 from pommerman.characters import Bomb
-from pommerman.constants import Item
+from pommerman.constants import Item, Action
 
 
 class Agent:
@@ -18,6 +18,7 @@ class Agent:
         self.bombs = bombs
         self.bomb_range = bomb_range
         self.alive = alive
+        self.action = None
 
     def __str__(self):
         return f"ID: {self.aid}, Board ID: {self.board_id}, Position: {self.position}, Kick: {self.can_kick}, Ammo: {self.ammo}, Bombs: {[(bomb.position, bomb.life) for bomb in self.bombs]}, Bomb Range: {self.bomb_range}, Alive: {self.alive}"
@@ -129,7 +130,12 @@ def convert_opponent(board: np.ndarray, bomb_life: np.ndarray, prev_board: np.nd
     locations = np.where(board == opponent.board_id)
     if len(locations) == 0:
         opponent.alive = False
-    opponent.position = (locations[0][0], locations[1][0])
+    new_position = (locations[0][0], locations[1][0])
+    for action in [Action.Left, Action.Right, Action.Up, Action.Down, Action.Stop]:
+        if new_position == utility.get_next_position(opponent.position, action):
+            opponent.action = action.value
+            break
+    opponent.position = new_position
     for bomb in opponent.bombs:
         bomb.life -= 1
         if bomb.life == 0:
@@ -137,6 +143,7 @@ def convert_opponent(board: np.ndarray, bomb_life: np.ndarray, prev_board: np.nd
             opponent.ammo += 1
     if bomb_life[opponent.position] == constants.DEFAULT_BOMB_LIFE:
         opponent.laid_bomb()
+        opponent.action = Action.Bomb.value
         opponent.ammo -= 1
     if prev_board is not None:
         if prev_board[opponent.position] == Item.Kick.value:

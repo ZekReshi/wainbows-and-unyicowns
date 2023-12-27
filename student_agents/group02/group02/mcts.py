@@ -8,11 +8,7 @@ This implementation is based on:
 from abc import ABC, abstractmethod
 import math
 from gym import spaces
-import numpy as np
 from typing import Tuple, List, Dict, Optional
-
-from group02.game_state import Agent
-from pommerman import characters, agents
 
 
 class MCTS:
@@ -32,12 +28,12 @@ class MCTS:
         self.rollout_depth = rollout_depth
         self.exploration_weight = exploration_weight  # used in uct formula
 
-    def choose(self, node: 'MCTSNode') -> int:
+    def choose(self) -> int:
         """ Choose the best successor of node. (Choose an action) """
-        if node.is_terminal():
-            raise RuntimeError(f"choose called on terminal node {node}")
+        if self.root_node.is_terminal():
+            raise RuntimeError(f"choose called on terminal node {self.root_node}")
 
-        children: Dict[Tuple[int, int], 'MCTSNode'] = node.get_children()
+        children: Dict[Tuple[int, int], 'MCTSNode'] = self.root_node.get_children()
         if len(children) == 0:
             # choose a move randomly, should hopefully never happen
             return self.action_space.sample()
@@ -50,12 +46,18 @@ class MCTS:
 
         return max(children.keys(), key=score)[self.agent_id]
 
-    def do_rollout(self, node: 'MCTSNode') -> None:
+    def do_rollout(self) -> None:
         """ Execute one tree update step: select, expand, simulate, backpropagate """
-        path: List['MCTSNode'] = self._select_and_expand(node)
+        path: List['MCTSNode'] = self._select_and_expand(self.root_node)
         leaf: 'MCTSNode' = path[-1]
         reward = self._simulate(leaf)
         self._backpropagate(path, reward)
+
+    def step(self, actions: Tuple[int, int]):
+        if self.root_node is None:
+            return False
+        self.root_node = self.root_node.step(actions)
+        return self.root_node is not None
 
     def _select_and_expand(self, node: 'MCTSNode') -> List['MCTSNode']:
         """ Find an unexplored descendent of node """
@@ -135,6 +137,11 @@ class MCTSNode(ABC):
     A representation of a single board state.
     MCTS works by constructing a tree of these Nodes.
     """
+
+    @abstractmethod
+    def step(self, actions: Tuple[int, int]):
+        # returns the deterministic child from the given actions
+        raise NotImplementedError
 
     @abstractmethod
     def get_children(self) -> Dict[Tuple[int, int], 'MCTSNode']:

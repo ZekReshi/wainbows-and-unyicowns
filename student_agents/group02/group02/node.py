@@ -1,4 +1,3 @@
-import copy
 import random
 import numpy as np
 from typing import Dict, Tuple, List, Optional
@@ -22,7 +21,8 @@ class Node(MCTSNode):
                  opponent_agent: Agent,
                  bombs: List[characters.Bomb],
                  items: Dict[Tuple[int, int], int],
-                 flames: List[characters.Flame]) -> None:
+                 flames: List[characters.Flame],
+                 is_deterministic: bool) -> None:
         self.total_reward = 0.0
         self.visit_count = 0
 
@@ -32,6 +32,7 @@ class Node(MCTSNode):
         self.bombs = bombs
         self.items = items
         self.flames = flames
+        self.is_deterministic = is_deterministic
 
         # here we need to think about pruning (for a particular node)
         # which action combinations do we really want to investigate in our search?
@@ -91,7 +92,7 @@ class Node(MCTSNode):
         bombs = _copy_bombs(self.bombs)
         items = self.items.copy()
         flames = _copy_flames(self.flames)
-        board, agents, curr_bombs, curr_items, curr_flames = ForwardModel.step(
+        board, agents, curr_bombs, curr_items, curr_flames, is_deterministic = ForwardModel.step(
             actions,
             board,
             agents,
@@ -99,7 +100,17 @@ class Node(MCTSNode):
             items,
             flames
         )
-        return Node(board, agents[0], agents[1], curr_bombs, curr_items, curr_flames)
+        return Node(board, agents[0], agents[1], curr_bombs, curr_items, curr_flames, is_deterministic)
+
+    def step(self, actions: Tuple[int, int]):
+        matching_child = None
+        for action_pair, child in list(self.children.items()):
+            if not child.is_deterministic or action_pair != actions:
+                del self.children[action_pair]
+                del child
+                continue
+            matching_child = child
+        return matching_child
 
     def find_random_child(self) -> 'Node':
         """ returns a random child, expands the child if it has not already been done """
@@ -247,10 +258,6 @@ def _value_func(root_node, board, own_agent: Agent, opponent_agent: Agent) -> fl
         # default bomb life = 9, rollout depth = 7, 9 - 2 = 2
         wood_score *= 1.1 ** (constants.DEFAULT_BOMB_LIFE - bomb_life + 2)
     score += wood_score * (0.01 if attack_mode else 0.05) - 0.05
-    if wood_score * (0.01 if attack_mode else 0.05) - 0.05 > 4:
-        print(wood_score * (0.01 if attack_mode else 0.05) - 0.05)
-        for bomb in own_agent.bombs:
-            print(bomb.position)
 
     # if in attack_mode, see if we can place game-winning bomb
     return score

@@ -19,6 +19,8 @@ class ForwardModel(object):
              max_blast_strength=10):
         board_size = len(curr_board)
 
+        is_deterministic = True
+
         # Tick the flames. Replace any dead ones with passages. If there is an
         # item there, then reveal that item.
         flames = []
@@ -27,6 +29,7 @@ class ForwardModel(object):
             if flame.is_dead():
                 item_value = curr_items.get(position)
                 if item_value:
+                    is_deterministic = False
                     del curr_items[position]
                 else:
                     item_value = constants.Item.Passage.value
@@ -370,4 +373,4 @@ class ForwardModel(object):
             else:
                 curr_board[agent.position] = utility.agent_value(agent.aid)
 
-        return curr_board, curr_agents, curr_bombs, curr_items, curr_flames
+        return curr_board, curr_agents, curr_bombs, curr_items, curr_flames, is_deterministic
