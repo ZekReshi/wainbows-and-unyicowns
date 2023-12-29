@@ -20,7 +20,7 @@ class MCTS:
                  action_space: spaces.Discrete,
                  agent_id: int,
                  root_node: 'MCTSNode',
-                 rollout_depth: int = 4,
+                 rollout_depth: int = 5,
                  exploration_weight: float = 1) -> None:
         self.action_space = action_space
         self.root_node = root_node

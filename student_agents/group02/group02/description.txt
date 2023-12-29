@@ -18,3 +18,9 @@ Version 2:
 * Observations: Correct enemy modeling.
 * Increased depth.
 Is is better? As it can still put out the same amount of rollouts although it has a larger search depth, we assume it will perform better as all other changes made it more complicated and take more information into account. When run on our laptops, it played noticeably better in most arenas.
+
+Version 3:
+*Value function: now using A* Algorithm to calculate closeness to enemy agent, instead of manhattan distance, because that caused to run into walls
+*Normalised Scoring function output for the interval of 0 to 1
+*Adjusted bomb scoring to take bomb age into account
+*Increased Rollout depth
