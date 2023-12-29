@@ -24,9 +24,10 @@ Version 3:
 * Value function: now using A* Algorithm to calculate closeness to enemy agent, instead of manhattan distance, because that caused it to run into walls
 * Value function: Normalised Scoring function output for the interval of 0 to 1
 * Value function: Adjusted bomb scoring to take bomb age into account
+* MCTS: Depth is decreased from 7 to 6 because of the usage of A*
 * MCTS: Tree is reused: The own move is stored and the enemy's move is calculated.
     If a matching child node exists and it is deterministic (no items were spawned), the root node is set to this child.
     If the enemy is not modeled (action = STOP), the tree is still reused if the enemy made the STOP action.
 Is it better?
-Compared to last time, the agent is more efficient and less indecisive when farming.
+Compared to last time, the agent is more efficient and less indecisive when farming due to the normalized scoring.
 Also, in the endgame, when both agents are close, the tree is reused very often, leading to more efficient search.
