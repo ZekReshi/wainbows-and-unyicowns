@@ -25,7 +25,7 @@ class Group02Agent(agents.BaseAgent):
         self.me = Agent(0, 0, (0, 0), False, 1, [], 2, True)
         self.opponent = Agent(0, 0, (0, 0), False, 1, [], 2, True)
         self.prev_board = None
-        self.tree = MCTS(None, 0, None, rollout_depth=7)
+        self.tree = MCTS(None, 0, None, rollout_depth=6)
         self.action = None
 
     def act(self, obs, action_space):

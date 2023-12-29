@@ -166,10 +166,8 @@ class Node(MCTSNode):
         # which assigns a numeric value to state (how "desirable" is the state?)
         return self._value_func(root_node, self.board, self.own_agent, self.opponent_agent)
 
-
-    def manhattan_dist(self,pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
+    def manhattan_dist(self, pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
-
 
     def a_star_path(self,pos1: Tuple[int, int], pos2: Tuple[int, int], board: np.ndarray) -> List[Tuple[int, int]]:
         if pos1 in self.a_star_cache and pos2 in self.a_star_cache[pos1]:
@@ -216,17 +214,14 @@ class Node(MCTSNode):
         self.a_star_cache[pos1][pos2] = path
         return path
 
-
-    def astar_dist(self,pos1: Tuple[int, int], pos2: Tuple[int, int], board) -> int:
+    def astar_dist(self, pos1: Tuple[int, int], pos2: Tuple[int, int], board) -> int:
         length = 0
-        path = self.a_star_path(pos1,pos2,board)
+        path = self.a_star_path(pos1, pos2, board)
         for node in path:
-            length+=1
-            if board[node[0]][node[1]] in [Item.Flames.value,Item.Bomb.value]:
+            length += 1
+            if board[node[0]][node[1]] in [Item.Flames.value, Item.Bomb.value]:
                 break
         return length
-
-
 
     def _value_func(self,root_node, board, own_agent: Agent, opponent_agent: Agent) -> float:
         # TODO: here you need to assign a value seto a game state, for example the evaluation can
@@ -278,20 +273,20 @@ class Node(MCTSNode):
                       (not need_bomb_range and not need_ammo and not need_kick)
 
         MOVE_ENEMY_WEIGHT = 0.05 if not attack_mode else 0.7
-        COLLECT_ITEM_WEIGHT =0.6 if not attack_mode else 0.05
-        BOMB_WEIGHT= 0.35 if not attack_mode else 0.25
+        COLLECT_ITEM_WEIGHT = 0.6 if not attack_mode else 0.05
+        BOMB_WEIGHT = 0.35 if not attack_mode else 0.25
         # we want to push our agent towards the opponent
         move_enemy_score = 0
         dist = self.astar_dist(own_position, opponent_position, board)
-        if dist >1:
-            move_enemy_score = max(10 - ((dist-2)//2),0)
+        if dist > 1:
+            move_enemy_score = max(10 - ((dist-2)//2), 0)
 
         # we want to collect items (forward model was modified to make this easier)
         collect_item_score = get_collect_item_score(own_agent, root_node.own_agent)
 
         # since search depth is limited, we need to reward well placed bombs instead
         # of only rewarding collecting items
-        #b
+
         bomb_scores = []
 
         for bomb in own_agent.bombs:
@@ -302,19 +297,16 @@ class Node(MCTSNode):
             if attack_mode:
                 destroy_weight = 0.3
 
-                bomb_score += bomb_kill_score(board, opponent_position, bomb.position, bomb.blast_strength) * (1-destroy_weight)
-            bomb_score += (min(10,len(new_woods)+8) if len(new_woods)>0 else 0) * min(1,((constants.DEFAULT_BOMB_LIFE - bomb.life+2)/constants.DEFAULT_BOMB_LIFE)) *destroy_weight
+                bomb_score += bomb_kill_score(board, opponent_position, bomb.position, bomb.blast_strength) * (1 - destroy_weight)
+            bomb_score += (min(10, len(new_woods) + 8) if len(new_woods) > 0 else 0) * min(1, ((constants.DEFAULT_BOMB_LIFE - bomb.life+2)/constants.DEFAULT_BOMB_LIFE)) * destroy_weight
 
             bomb_scores.append(bomb_score)
-        #for bomb_life in woods.values():
-        #    # default bomb life = 9, rollout depth = 7, 9 - 2 = 2
-        #    score +=  (0.1 if attack_mode else 0.5) * ((constants.DEFAULT_BOMB_LIFE - bomb_life + 2)/constants.DEFAULT_BOMB_LIFE)
 
-        score += MOVE_ENEMY_WEIGHT*move_enemy_score/10
-        score += COLLECT_ITEM_WEIGHT*collect_item_score/10
+        score += MOVE_ENEMY_WEIGHT * move_enemy_score / 10
+        score_old = score
+        score += COLLECT_ITEM_WEIGHT * collect_item_score / 10
         if len(bomb_scores) > 0:
             score += BOMB_WEIGHT * (max(bomb_scores) if attack_mode else np.average(bomb_scores)) / 10
-
 
         return score
 
@@ -398,11 +390,12 @@ def bomb_kill_score(board: np.ndarray, agent_position, bomb_position: Tuple[int,
                 break
     return 0
 
+
 def get_collect_item_score(own_agent, own_agent1):
     range_diff = (own_agent.bomb_range - own_agent1.bomb_range)
-    ammo_diff =  (own_agent.ammo - own_agent1.ammo)
+    ammo_diff = (own_agent.ammo - own_agent1.ammo)
     kick_diff = (own_agent.can_kick - own_agent1.can_kick)
-    diff_sum  = range_diff + ammo_diff + kick_diff
+    diff_sum = range_diff + ammo_diff + kick_diff
     if diff_sum > 0:
         return 10
     else:
