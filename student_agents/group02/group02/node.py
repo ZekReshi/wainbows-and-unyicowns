@@ -298,10 +298,13 @@ class Node(MCTSNode):
             new_woods = _get_woods_in_range(board, bomb.position, bomb.blast_strength)
             # if in attack_mode, see if we can place game-winning bomb
             bomb_score = 0
+            destroy_weight = 1
             if attack_mode:
-                bomb_score += bomb_kill_score(board, opponent_position, bomb.position, bomb.blast_strength)
-            else:
-                bomb_score += (min(10,len(new_woods)+8) if len(new_woods)>0 else 0) * min(1,((constants.DEFAULT_BOMB_LIFE - bomb.life+2)/constants.DEFAULT_BOMB_LIFE))
+                destroy_weight = 0.3
+
+                bomb_score += bomb_kill_score(board, opponent_position, bomb.position, bomb.blast_strength) * (1-destroy_weight)
+            bomb_score += (min(10,len(new_woods)+8) if len(new_woods)>0 else 0) * min(1,((constants.DEFAULT_BOMB_LIFE - bomb.life+2)/constants.DEFAULT_BOMB_LIFE)) *destroy_weight
+
             bomb_scores.append(bomb_score)
         #for bomb_life in woods.values():
         #    # default bomb life = 9, rollout depth = 7, 9 - 2 = 2
